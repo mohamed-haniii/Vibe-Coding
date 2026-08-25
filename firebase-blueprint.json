@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Clinic staff and doctors",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["doctor", "receptionist", "admin"] },
+        "name": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "role", "name"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Registered clinic patients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "age": { "type": "number" },
+        "gender": { "type": "string" },
+        "address": { "type": "string" },
+        "occupation": { "type": "string" },
+        "notes": { "type": "string" },
+        "medicalHistory": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Visit": {
+      "title": "Visit",
+      "description": "Clinic consultations and visits",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientCode": { "type": "string" },
+        "visitTypeId": { "type": "string" },
+        "visitTypeName": { "type": "string" },
+        "price": { "type": "number" },
+        "finalPrice": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "queueNumber": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "heightCm": { "type": "number" },
+        "bmi": { "type": "number" },
+        "visitDate": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["patientId", "patientName", "visitDate", "status"]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Reception cashier work shifts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cashierId": { "type": "string" },
+        "cashierName": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "startingCash": { "type": "number" },
+        "expectedCash": { "type": "number" },
+        "actualCash": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["cashierName", "startTime", "status"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Clinic general settings",
+      "type": "object",
+      "properties": {
+        "clinicName": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "specialty": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users": { "entity": "User" },
+    "patients": { "entity": "Patient" },
+    "visits": { "entity": "Visit" },
+    "shifts": { "entity": "Shift" },
+    "settings": { "entity": "Setting" },
+    "dietPlans": { "entity": "object" },
+    "expenses": { "entity": "object" }
+  }
+}

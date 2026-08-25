@@ -1,0 +1,6 @@
+{
+  "name": "نظام إدارة عيادة التخسيس",
+  "description": "نظام كامل لإدارة عيادة التخسيس يدعم جهاز الاستقبال (الكاشير) وجهاز الدكتورة مع تحديثات لحظية، إدارة الشيفتات، السجل الطبي والتقارير المالية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
