@@ -46,7 +46,8 @@ router.get('/', async (req, res) => {
       pdf_show_prescriptions: settings.pdf_show_prescriptions !== undefined ? settings.pdf_show_prescriptions === 'true' : true,
       pdf_show_next_date: settings.pdf_show_next_date !== undefined ? settings.pdf_show_next_date === 'true' : true,
       pdf_font_size: settings.pdf_font_size || 'medium',
-      pdf_paper_size: settings.pdf_paper_size || 'A4'
+      pdf_paper_size: settings.pdf_paper_size || 'A4',
+      patient_clinical_data_entry_role: (settings.patient_clinical_data_entry_role as 'both' | 'doctor' | 'assistant') || 'both'
     });
   } catch (err: any) {
     return res.status(500).json({ message: 'فشل في استرجاع إعدادات العيادة' });
@@ -84,7 +85,8 @@ router.put('/', authenticateToken, requireRole('Admin'), async (req: Authenticat
       pdf_show_prescriptions,
       pdf_show_next_date,
       pdf_font_size,
-      pdf_paper_size
+      pdf_paper_size,
+      patient_clinical_data_entry_role
     } = req.body;
 
     const db = await getDb();
@@ -134,6 +136,7 @@ router.put('/', authenticateToken, requireRole('Admin'), async (req: Authenticat
     if (pdf_show_next_date !== undefined) await updateSetting('pdf_show_next_date', String(Boolean(pdf_show_next_date)));
     if (pdf_font_size !== undefined) await updateSetting('pdf_font_size', pdf_font_size.trim());
     if (pdf_paper_size !== undefined) await updateSetting('pdf_paper_size', pdf_paper_size.trim());
+    if (patient_clinical_data_entry_role !== undefined) await updateSetting('patient_clinical_data_entry_role', patient_clinical_data_entry_role);
 
     await logAudit(req.user!.id, 'UPDATE_CLINIC_SETTINGS', 'Setting', 0, { ...req.body, previousSettings });
     emitRealtimeEvent('settings-updated');

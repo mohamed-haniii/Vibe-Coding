@@ -78,50 +78,89 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({ onClose }) => {
             </div>
 
             {/* Shift Summary Cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl">
-                <div className="text-[11px] text-slate-500 font-semibold mb-1 flex items-center gap-1">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                  إجمالي المبلغ المحصّل
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                <div className="text-[10px] text-slate-500 font-semibold mb-0.5 flex items-center gap-1">
+                  <DollarSign className="w-3 h-3 text-blue-600" />
+                  إيراد الكشوفات
                 </div>
-                <div className="text-xl font-black text-emerald-600">
-                  {currentShift.totalAmount} <span className="text-xs font-normal">ج.م</span>
+                <div className="text-sm font-black text-slate-800">
+                  {currentShift.totalAmount} <span className="text-[10px] font-normal">ج.م</span>
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl">
-                <div className="text-[11px] text-slate-500 font-semibold mb-1 flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5 text-blue-600" />
-                  عدد الزيارات المسجلة
+              <div className="bg-emerald-50/70 border border-emerald-200 p-2.5 rounded-xl">
+                <div className="text-[10px] text-emerald-700 font-semibold mb-0.5">
+                  + الإيداعات
                 </div>
-                <div className="text-xl font-black text-blue-600">
-                  {currentShift.totalVisits} <span className="text-xs font-normal">زيارة</span>
+                <div className="text-sm font-black text-emerald-600">
+                  +{currentShift.totalCashIn || 0} <span className="text-[10px] font-normal">ج.م</span>
+                </div>
+              </div>
+
+              <div className="bg-rose-50/70 border border-rose-200 p-2.5 rounded-xl">
+                <div className="text-[10px] text-rose-700 font-semibold mb-0.5">
+                  - المصاريف
+                </div>
+                <div className="text-sm font-black text-rose-600">
+                  -{currentShift.totalExpenses || 0} <span className="text-[10px] font-normal">ج.م</span>
+                </div>
+              </div>
+
+              <div className="bg-purple-100/70 border border-purple-300 p-2.5 rounded-xl">
+                <div className="text-[10px] text-purple-900 font-bold mb-0.5">
+                  صافي الدرج
+                </div>
+                <div className="text-sm font-black text-purple-700">
+                  {currentShift.netDrawerCash !== undefined ? currentShift.netDrawerCash : ((currentShift.totalAmount || 0) + (currentShift.totalCashIn || 0) - (currentShift.totalExpenses || 0))} <span className="text-[10px] font-normal">ج.م</span>
                 </div>
               </div>
             </div>
 
             {/* Visit Breakdown */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
-              <div className="text-xs font-bold text-slate-700 flex items-center gap-1 mb-2">
-                <Layers className="w-3.5 h-3.5 text-slate-500" />
-                <span>تفاصيل نوع الزيارات في الشيفت:</span>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5">
+              <div className="text-xs font-bold text-slate-700 flex items-center justify-between mb-1">
+                <span className="flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-slate-500" />
+                  <span>تفاصيل الزيارات:</span>
+                </span>
+                <span className="text-blue-600 font-extrabold text-xs">{currentShift.totalVisits} زيارة</span>
               </div>
 
-              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-200/60">
+              <div className="flex justify-between items-center text-xs py-0.5 border-b border-slate-200/60">
                 <span className="text-slate-600 font-medium">كشف جديد (200 ج.م):</span>
                 <span className="font-bold text-slate-900">{currentShift.newVisitsCount}</span>
               </div>
 
-              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-200/60">
+              <div className="flex justify-between items-center text-xs py-0.5 border-b border-slate-200/60">
                 <span className="text-slate-600 font-medium">إعادة (50 ج.م):</span>
                 <span className="font-bold text-slate-900">{currentShift.followupVisitsCount}</span>
               </div>
 
-              <div className="flex justify-between items-center text-xs py-1">
+              <div className="flex justify-between items-center text-xs py-0.5">
                 <span className="text-slate-600 font-medium">نظام تثبيت (60 ج.م):</span>
                 <span className="font-bold text-slate-900">{currentShift.maintenanceVisitsCount}</span>
               </div>
             </div>
+
+            {/* Drawer Transactions in Shift */}
+            {currentShift.drawerTransactions && currentShift.drawerTransactions.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 max-h-32 overflow-y-auto">
+                <div className="text-xs font-bold text-slate-700 mb-1">
+                  حركات ومصاريف الدرج المسجلة بالشيفت ({currentShift.drawerTransactions.length}):
+                </div>
+                {currentShift.drawerTransactions.map(tx => (
+                  <div key={tx.id} className="flex justify-between items-center text-[11px] py-1 border-b border-slate-200/50 last:border-none">
+                    <span className="text-slate-700 truncate max-w-[200px]" title={tx.notes}>
+                      {tx.type === 'Expense' ? '🔴' : '🟢'} {tx.notes}
+                    </span>
+                    <span className={`font-black ${tx.type === 'Expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {tx.type === 'Expense' ? '-' : '+'}{tx.amount} ج.م
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <button
               onClick={handleCloseShift}

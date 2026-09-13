@@ -41,6 +41,15 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // Gracefully handle malformed JSON bodies
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+      console.error('[JSON Parser Error] Malformed JSON received:', err.message);
+      return res.status(400).json({ message: 'تنسيق البيانات المرسلة غير صالح (Malformed JSON)' });
+    }
+    next(err);
+  });
+
   // Create HTTP Server
   const httpServer = http.createServer(app);
 

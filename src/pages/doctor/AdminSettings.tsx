@@ -73,7 +73,8 @@ export const AdminSettings: React.FC = () => {
     enable_receipt_auto_print: true,
     allow_cashier_cancel_visit: false,
     enable_weight_loss_target_badge: true,
-    enable_whatsapp_reminders: true
+    enable_whatsapp_reminders: true,
+    patient_clinical_data_entry_role: 'both'
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -345,7 +346,7 @@ export const AdminSettings: React.FC = () => {
       setBackupSuccess(null);
       setBackupError(null);
 
-      const token = localStorage.getItem('clinic_jwt_token');
+      const token = sessionStorage.getItem('clinic_jwt_token');
       const response = await fetch(`/api/admin/backup?format=${format}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -1008,6 +1009,82 @@ pause
                   }`}
                 />
               </button>
+            </div>
+
+            {/* Clinical & Habits Data Entry Permission */}
+            <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">
+                    مكان إدخال التاريخ الطبي والبيانات السريرية والعادات للمريض
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    حدد من يُسمح له بملء التاريخ الجراحي، الأدوية، والعادات الحياتية للمريض
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, patient_clinical_data_entry_role: 'both' }))}
+                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-right cursor-pointer flex flex-col gap-1 ${
+                    (settings.patient_clinical_data_entry_role || 'both') === 'both'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>الدكتور والمساعد معاً</span>
+                    {(settings.patient_clinical_data_entry_role || 'both') === 'both' && <span>✓</span>}
+                  </div>
+                  <span className={`text-[10px] ${
+                    (settings.patient_clinical_data_entry_role || 'both') === 'both' ? 'text-purple-100' : 'text-slate-400'
+                  }`}>
+                    تظهر عند الاسيستنت بالاستقبال وعند الدكتور بالعيادة
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, patient_clinical_data_entry_role: 'doctor' }))}
+                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-right cursor-pointer flex flex-col gap-1 ${
+                    settings.patient_clinical_data_entry_role === 'doctor'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>الدكتور فقط</span>
+                    {settings.patient_clinical_data_entry_role === 'doctor' && <span>✓</span>}
+                  </div>
+                  <span className={`text-[10px] ${
+                    settings.patient_clinical_data_entry_role === 'doctor' ? 'text-purple-100' : 'text-slate-400'
+                  }`}>
+                    تختفي تماماً من عند الاسيستنت ويدخلها الدكتور فقط
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, patient_clinical_data_entry_role: 'assistant' }))}
+                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-right cursor-pointer flex flex-col gap-1 ${
+                    settings.patient_clinical_data_entry_role === 'assistant'
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>الاسيستنت فقط</span>
+                    {settings.patient_clinical_data_entry_role === 'assistant' && <span>✓</span>}
+                  </div>
+                  <span className={`text-[10px] ${
+                    settings.patient_clinical_data_entry_role === 'assistant' ? 'text-purple-100' : 'text-slate-400'
+                  }`}>
+                    يدخلها الاسيستنت بالاستقبال ويطلع عليها الدكتور
+                  </span>
+                </button>
+              </div>
             </div>
 
           </div>

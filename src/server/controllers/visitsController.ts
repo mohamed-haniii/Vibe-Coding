@@ -57,8 +57,8 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       idempotencyKey 
     } = req.body;
 
-    if (!patientId || !visitTypeId || !weightKg || !idempotencyKey) {
-      return res.status(400).json({ message: 'جميع البيانات مطلوبة (المريض، نوع الزيارة، الوزن، ومفتاح العملية)' });
+    if (!patientId || !visitTypeId || !idempotencyKey) {
+      return res.status(400).json({ message: 'جميع البيانات مطلوبة (المريض، نوع الزيارة، ومفتاح العملية)' });
     }
 
     const db = await getDb();
@@ -125,8 +125,11 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 
     // 3. Strictly calculate official smart price based on patient visit history & rules
     const smartCalculation = await getSmartVisitPricing(parseInt(patientId, 10), parseInt(visitTypeId, 10));
-    const officialPrice = smartCalculation.finalPrice;
+    let officialPrice = smartCalculation.finalPrice;
     const effectiveVisitTypeId = smartCalculation.recommendedVisitTypeId;
+    if (!officialPrice || officialPrice <= 0 || isNaN(officialPrice)) {
+      officialPrice = effectiveVisitTypeId === 1 ? 200 : 50;
+    }
 
     // Get patient info
     const patient = await db.get('SELECT * FROM patients WHERE id = ?', [patientId]);
@@ -135,15 +138,15 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     }
 
     const effectiveHeightCm = heightCm ? parseFloat(heightCm) : (patient.height_cm || null);
-    const weight = parseFloat(weightKg);
+    const weight = weightKg !== undefined && weightKg !== null && weightKg !== '' && !isNaN(parseFloat(weightKg)) && parseFloat(weightKg) > 0 ? parseFloat(weightKg) : 0;
     const fat = fatPercentage ? parseFloat(fatPercentage) : null;
     const muscle = musclePercentage ? parseFloat(musclePercentage) : null;
     const water = waterPercentage ? parseFloat(waterPercentage) : null;
     const bone = boneMass ? parseFloat(boneMass) : null;
 
-    // Calculate BMI if height exists
+    // Calculate BMI if height and positive weight exist
     let bmi: number | null = null;
-    if (effectiveHeightCm && effectiveHeightCm > 0) {
+    if (weight > 0 && effectiveHeightCm && effectiveHeightCm > 0) {
       const heightM = effectiveHeightCm / 100;
       bmi = parseFloat((weight / (heightM * heightM)).toFixed(1));
     }
@@ -172,9 +175,10 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       const now = new Date().toISOString();
       const todayDate = now.split('T')[0];
 
-      // Calculate queue number for today
+      // Calculate queue number for today (excluding archive entries)
       const queueCount = await db.get(
-        `SELECT COUNT(*) as count FROM visits WHERE date(created_at) = date(?)`,
+        `SELECT COUNT(*) as count FROM visits 
+         WHERE date(created_at) = date(?) AND (is_archive = 0 OR is_archive IS NULL) AND idempotency_key NOT LIKE 'HIST-%'`,
         [todayDate]
       );
       const queueNumber = (queueCount ? queueCount.count : 0) + 1;
@@ -474,7 +478,20 @@ router.put('/:id/measurement', authenticateToken, async (req: AuthenticatedReque
 
     emitRealtimeEvent('new-visit-in-queue', { refresh: true });
 
-    return res.json({ message: 'تم تحديث قياسات الزيارة ونسب الجسم بنجاح' });
+    return res.json({ 
+      message: 'تم تحديث قياسات الزيارة ونسب الجسم بنجاح',
+      measurement: {
+        weightKg: weight,
+        heightCm: effectiveHeightCm,
+        bmi,
+        fatPercentage: fat,
+        musclePercentage: muscle,
+        waterPercentage: water,
+        boneMass: bone,
+        bloodPressure: bloodPressure || null,
+        notes: notes || null
+      }
+    });
   } catch (err: any) {
     console.error('Update measurement error:', err);
     return res.status(500).json({ message: 'فشل في تحديث قياسات الزيارة' });
@@ -482,27 +499,44 @@ router.put('/:id/measurement', authenticateToken, async (req: AuthenticatedReque
 });
 
 // Doctor starts consultation
-router.put('/:id/start-consultation', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id/start-consultation', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const visitId = parseInt(req.params.id, 10);
+    if (isNaN(visitId)) {
+      return res.status(400).json({ message: 'معرف الزيارة غير صحيح' });
+    }
     const db = await getDb();
+
+    const visit = await db.get('SELECT * FROM visits WHERE id = ?', [visitId]);
+    if (!visit) {
+      return res.status(404).json({ message: 'الزيارة غير موجودة' });
+    }
 
     await db.run('UPDATE visits SET status = "InConsultation" WHERE id = ?', [visitId]);
 
-    await logAudit(req.user!.id, 'START_CONSULTATION', 'Visit', visitId);
+    try {
+      await logAudit(req.user!.id, 'START_CONSULTATION', 'Visit', visitId);
+    } catch (auditErr) {
+      console.error('Audit log warning:', auditErr);
+    }
 
     emitRealtimeEvent('visit-status-changed', { visitId, status: 'InConsultation' });
+    emitRealtimeEvent('new-visit-in-queue', { refresh: true });
 
     return res.json({ message: 'تم بدء الكشف للمريض', visitId, status: 'InConsultation' });
   } catch (err: any) {
+    console.error('Start consultation error:', err);
     return res.status(500).json({ message: 'فشل في تغيير حالة الكشف' });
   }
 });
 
 // Doctor completes consultation
-router.put('/:id/complete', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id/complete', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const visitId = parseInt(req.params.id, 10);
+    if (isNaN(visitId)) {
+      return res.status(400).json({ message: 'معرف الزيارة غير صحيح' });
+    }
     const { doctorNotes } = req.body;
     const db = await getDb();
     const now = new Date().toISOString();
@@ -528,7 +562,11 @@ router.put('/:id/complete', authenticateToken, requireRole('Admin'), async (req:
       await db.run(`UPDATE patients SET notes = ? WHERE id = ?`, [doctorNotes, visit.patient_id]);
     }
 
-    await logAudit(req.user!.id, 'COMPLETE_CONSULTATION', 'Visit', visitId, { doctorNotes });
+    try {
+      await logAudit(req.user!.id, 'COMPLETE_CONSULTATION', 'Visit', visitId, { doctorNotes });
+    } catch (auditErr) {
+      console.error('Audit log warning:', auditErr);
+    }
 
     // Send notification to cashier (WITHOUT medical notes)
     emitRealtimeEvent('consultation-completed', {
@@ -538,6 +576,7 @@ router.put('/:id/complete', authenticateToken, requireRole('Admin'), async (req:
     });
 
     emitRealtimeEvent('visit-status-changed', { visitId, status: 'Completed' });
+    emitRealtimeEvent('new-visit-in-queue', { refresh: true });
 
     return res.json({
       message: 'تم إغلاق الكشف بنجاح',

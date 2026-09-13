@@ -4,6 +4,9 @@ import { Visit, DietPlan } from '../../types';
 import { WeightChart } from '../../components/WeightChart';
 import { DietPlansModal } from '../../components/DietPlansModal';
 import { PrintDietPlanModal } from '../../components/PrintDietPlanModal';
+import { EditPatientMedicalModal } from '../../components/EditPatientMedicalModal';
+import { AddPatientArchiveModal } from '../../components/AddPatientArchiveModal';
+import { AddPastWeightModal } from '../../components/AddPastWeightModal';
 import { useSocket } from '../../contexts/SocketContext';
 import { 
   Stethoscope, 
@@ -21,7 +24,20 @@ import {
   Printer,
   Download,
   Scale,
-  X
+  MessageSquare,
+  X,
+  Heart,
+  Baby,
+  Pill,
+  Scissors,
+  Coffee,
+  Info,
+  UserCheck,
+  Target,
+  Edit3,
+  History,
+  UserPlus,
+  ShieldCheck
 } from 'lucide-react';
 
 export const DoctorDashboard: React.FC = () => {
@@ -39,6 +55,11 @@ export const DoctorDashboard: React.FC = () => {
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // New Modals State
+  const [isEditPatientOpen, setIsEditPatientOpen] = useState<boolean>(false);
+  const [isAddPastWeightOpen, setIsAddPastWeightOpen] = useState<boolean>(false);
+  const [isAddPatientArchiveOpen, setIsAddPatientArchiveOpen] = useState<boolean>(false);
 
   const [cancelConfirmTarget, setCancelConfirmTarget] = useState<{ visitId: number; patientName: string } | null>(null);
   const [savePlanPromptOpen, setSavePlanPromptOpen] = useState<boolean>(false);
@@ -99,6 +120,9 @@ export const DoctorDashboard: React.FC = () => {
       setTimeout(() => setSuccessMessage(null), 4000);
       setShowMeasurementModal(false);
       fetchQueue();
+      if (selectedVisit) {
+        handleRefreshPatientHistory(selectedVisit.patientId);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'فشل في حفظ القياسات');
     } finally {
@@ -106,11 +130,56 @@ export const DoctorDashboard: React.FC = () => {
     }
   };
 
+  // Maintenance (Stabilization) Mode Toggle
+  const [isUpdatingMaintenance, setIsUpdatingMaintenance] = useState<boolean>(false);
+
+  const handleToggleMaintenanceMode = async () => {
+    if (!selectedVisit) return;
+    setIsUpdatingMaintenance(true);
+    try {
+      const isCurrentlyMaintenance = Boolean(patientHistory?.isMaintenanceMode);
+      const nextState = !isCurrentlyMaintenance;
+      const targetWeight = selectedVisit.currentMeasurement?.weightKg || patientHistory?.latestMeasurement?.weightKg || null;
+
+      await apiRequest(`/patients/${selectedVisit.patientId}/maintenance`, {
+        method: 'PUT',
+        body: {
+          isMaintenanceMode: nextState,
+          targetWeight: targetWeight
+        }
+      });
+
+      setPatientHistory((prev: any) => prev ? {
+        ...prev,
+        isMaintenanceMode: nextState,
+        maintenanceTargetWeight: targetWeight,
+        maintenanceStartDate: nextState ? new Date().toISOString() : null
+      } : prev);
+
+      setSuccessMessage(nextState ? 'تم تفعيل نظام التثبيت لهذا المريض بنجاح! 🛡️' : 'تم إيقاف نظام التثبيت للمريض بنجاح.');
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'فشل في تحديث حالة التثبيت');
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setIsUpdatingMaintenance(false);
+    }
+  };
+
+  // BMI Category Calculator Helper
+  const getBmiDetails = (bmi: number) => {
+    if (bmi < 18.5) return { category: 'نحافة', color: 'text-sky-700 bg-sky-50 border-sky-200', textClass: 'text-sky-700' };
+    if (bmi < 25) return { category: 'وزن طبيعي ومثالي', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', textClass: 'text-emerald-700' };
+    if (bmi < 30) return { category: 'زيادة في الوزن', color: 'text-amber-700 bg-amber-50 border-amber-200', textClass: 'text-amber-700' };
+    if (bmi < 35) return { category: 'سمنة درجة أولى', color: 'text-orange-700 bg-orange-50 border-orange-200', textClass: 'text-orange-700' };
+    return { category: 'سمنة مفرطة', color: 'text-rose-700 bg-rose-50 border-rose-200', textClass: 'text-rose-700' };
+  };
+
   // Diet Plans State
   const [dietPlans, setDietPlans] = useState<DietPlan[]>([]);
   const [showDietPlansModal, setShowDietPlansModal] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-  const [printAutoMode, setPrintAutoMode] = useState<'print' | 'pdf' | null>(null);
+  const [printAutoMode, setPrintAutoMode] = useState<'print' | 'pdf' | 'whatsapp' | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
 
   const { isConnected } = useSocket();
@@ -255,38 +324,83 @@ export const DoctorDashboard: React.FC = () => {
     }
   };
 
+  // Reload patient history after editing or adding measurements
+  const handleRefreshPatientHistory = async (patientId?: number) => {
+    const pId = patientId || selectedVisit?.patientId;
+    if (!pId) return;
+    try {
+      const data: any = await apiRequest(`/patients/${pId}`);
+      setPatientHistory(data);
+    } catch (err) {
+      console.error('Failed to reload patient history:', err);
+    }
+  };
+
   // Start Consultation
-  const handleStartConsultation = async () => {
-    if (!selectedVisit) return;
+  const handleStartConsultation = async (targetVisit?: Visit, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const visit = targetVisit || selectedVisit;
+    if (!visit) return;
+
     setIsSubmitting(true);
+    setErrorMessage(null);
+
+    const visitId = visit.id;
+    const patientName = visit.patientName;
+
+    // Optimistic UI update immediately
+    if (selectedVisit?.id === visitId || !selectedVisit) {
+      setSelectedVisit(prev => prev ? { ...prev, status: 'InConsultation' } : { ...visit, status: 'InConsultation' });
+    }
+    setQueue(prev => prev.map(v => v.id === visitId ? { ...v, status: 'InConsultation' } : v));
+
+    if (!selectedVisit || selectedVisit.id !== visitId) {
+      await handleSelectVisit(visit);
+    }
 
     try {
-      await apiRequest(`/visits/${selectedVisit.id}/start-consultation`, {
+      await apiRequest(`/visits/${visitId}/start-consultation`, {
         method: 'PUT'
       });
+      setSuccessMessage(`تم بدء الكشف واستدعاء المريض (${patientName})، جاري الفحص وتدوين الملاحظات.`);
+      setTimeout(() => setSuccessMessage(null), 3500);
       fetchQueue();
     } catch (err: any) {
       console.error('Start consultation error:', err);
+      setErrorMessage(err.message || 'فشل في بدء الكشف، يرجى إعادة المحاولة');
+      setTimeout(() => setErrorMessage(null), 4000);
+      fetchQueue();
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Callback when patient is registered via archive modal
+  const handlePatientCreatedFromArchive = (newPatient: any, queueForToday?: boolean) => {
+    setSuccessMessage(`تم تسجيل المريض "${newPatient.fullName}" وتفريغ أرشيف الأوزان السابقة بنجاح!`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+    fetchQueue();
   };
 
   // Complete Consultation
   const handleCompleteConsultation = async () => {
     if (!selectedVisit) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
+
+    const visitId = selectedVisit.id;
+    const patientName = selectedVisit.patientName;
 
     try {
-      await apiRequest(`/visits/${selectedVisit.id}/complete`, {
+      await apiRequest(`/visits/${visitId}/complete`, {
         method: 'PUT',
         body: { doctorNotes }
       });
 
-      setSuccessMessage(`تم إغلاق كشف المريض ${selectedVisit.patientName} بنجاح!`);
+      setSuccessMessage(`تم إغلاق وحفظ كشف المريض (${patientName}) بنجاح!`);
       setTimeout(() => setSuccessMessage(null), 4000);
 
-      localStorage.removeItem(`doctor_notes_draft_${selectedVisit.id}`);
+      localStorage.removeItem(`doctor_notes_draft_${visitId}`);
       setSelectedVisit(null);
       selectedVisitRef.current = null;
       setPatientHistory(null);
@@ -295,6 +409,8 @@ export const DoctorDashboard: React.FC = () => {
 
     } catch (err: any) {
       console.error('Complete consultation error:', err);
+      setErrorMessage(err.message || 'فشل في حفظ وإغلاق الكشف');
+      setTimeout(() => setErrorMessage(null), 4000);
     } finally {
       setIsSubmitting(false);
     }
@@ -374,16 +490,25 @@ export const DoctorDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Counter Pills */}
-        <div className="flex items-center gap-3 dir-rtl">
-          <div className="px-4 py-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-2xl flex items-center gap-2">
+        {/* Counter Pills & Add Patient Button */}
+        <div className="flex flex-wrap items-center gap-3 dir-rtl">
+          <button
+            type="button"
+            onClick={() => setIsAddPatientArchiveOpen(true)}
+            className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>إضافة مريض جديد / تفريغ الأرشيف 📋</span>
+          </button>
+
+          <div className="px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-2xl flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-blue-600" />
             <span className="text-xs font-bold">في الانتظار: <span className="text-sm font-black text-blue-700">{waitingCount}</span></span>
           </div>
 
-          <div className="px-4 py-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-2">
+          <div className="px-3.5 py-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-1.5">
             <Activity className="w-4 h-4 text-amber-600 animate-pulse" />
-            <span className="text-xs font-bold">في الكشف الآن: <span className="text-sm font-black text-amber-700">{inConsultationCount}</span></span>
+            <span className="text-xs font-bold">في الكشف: <span className="text-sm font-black text-amber-700">{inConsultationCount}</span></span>
           </div>
         </div>
       </div>
@@ -492,18 +617,35 @@ export const DoctorDashboard: React.FC = () => {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5 border-t border-slate-100">
-                        <span>دفع: <strong className="text-emerald-600">{visit.price} ج.م (Paid)</strong></span>
+                      {/* Card Action Controls: Start Consultation + Details */}
+                      <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60">
+                        {visit.status === 'Waiting' ? (
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartConsultation(visit, e)}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+                            title="بدء الكشف واستدعاء المريض إلى غرفة الكشف الآن"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>بدء الكشف 🩺</span>
+                          </button>
+                        ) : (
+                          <span className="px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] rounded-xl flex items-center gap-1">
+                            <Activity className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                            <span>في الكشف الآن</span>
+                          </span>
+                        )}
+
                         <div className="flex items-center gap-2">
-                          <span>الكاشير: {visit.cashierName}</span>
+                          <span className="text-[11px] text-emerald-700 font-bold">{visit.price} ج.م</span>
                           <button
                             type="button"
                             onClick={(e) => handleCancelVisit(visit.id, visit.patientName, e)}
-                            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-100 transition-colors flex items-center gap-0.5"
+                            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-100 transition-colors flex items-center gap-0.5 cursor-pointer"
                             title="مسح المريض من قائمة الانتظار"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            <span className="text-[10px] font-bold">إلغاء/مسح</span>
+                            <span className="text-[10px] font-bold">إلغاء</span>
                           </button>
                         </div>
                       </div>
@@ -538,11 +680,27 @@ export const DoctorDashboard: React.FC = () => {
                 </div>
 
                 {/* Consultation Status Controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Maintenance Mode Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={handleToggleMaintenanceMode}
+                    disabled={isUpdatingMaintenance}
+                    className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      patientHistory?.isMaintenanceMode
+                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-md shadow-emerald-500/30'
+                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/20'
+                    }`}
+                    title={patientHistory?.isMaintenanceMode ? 'المريض مسجل بنظام التثبيت - اضغط للإيقاف' : 'تفعيل نظام التثبيت لهذا المريض'}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{patientHistory?.isMaintenanceMode ? '🛡️ نظام التثبيت (مُفعّل)' : '🛡️ تفعيل التثبيت'}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={(e) => handleCancelVisit(selectedVisit.id, selectedVisit.patientName, e)}
-                    className="px-3 py-2 bg-rose-500/20 text-rose-200 hover:bg-rose-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 border border-rose-400/30"
+                    className="px-3 py-2 bg-rose-500/20 text-rose-200 hover:bg-rose-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 border border-rose-400/30 cursor-pointer"
                     title="مسح من قائمة الانتظار"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -551,12 +709,12 @@ export const DoctorDashboard: React.FC = () => {
 
                   {selectedVisit.status === 'Waiting' ? (
                     <button
-                      onClick={handleStartConsultation}
+                      onClick={() => handleStartConsultation()}
                       disabled={isSubmitting}
-                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer hover:scale-105"
                     >
                       <Play className="w-4 h-4 fill-slate-950" />
-                      <span>بدء الكشف الآن</span>
+                      <span>بدء الكشف ودخول المريض 🩺</span>
                     </button>
                   ) : (
                     <span className="px-3 py-1.5 bg-amber-500/20 text-amber-300 text-xs font-bold rounded-xl border border-amber-400/30 flex items-center gap-1.5">
@@ -566,6 +724,174 @@ export const DoctorDashboard: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Maintenance Mode Info Banner */}
+              {patientHistory?.isMaintenanceMode && (
+                <div className="bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span>المريض في مرحلة التثبيت والحفاظ على الوزن • يتم احتساب سعر كشف التثبيت تلقائياً عند التسجيل بالاستقبال</span>
+                  </div>
+                  {patientHistory.maintenanceTargetWeight && (
+                    <span className="bg-emerald-500/40 border border-emerald-400/50 px-2.5 py-0.5 rounded-lg font-mono text-[11px] text-white">
+                      الوزن المثبت: {patientHistory.maintenanceTargetWeight} كجم
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Patient Clinical, Social, Surgical & Lifestyle History Profile */}
+              {patientHistory && (
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3 text-right">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2">
+                    <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-blue-600" />
+                      <span>الملف الطبي والاجتماعي والعادات اليومية للمريض</span>
+                    </span>
+
+                    {/* Quick Edit & Add Past Weight Actions */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditPatientOpen(true)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                        title="تعديل العادات والعمليات والأدوية والبيانات الطبية"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>تعديل السجل والعادات ✏️</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsAddPastWeightOpen(true)}
+                        className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                        title="إضافة وزن وتاريخ قديم للمريض"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        <span>+ إضافة وزن سابق للأرشيف 📜</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Badges row: Age, Gender, Target Weight, Social, Children, Pregnant/Lactating */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">العمر / السن</span>
+                      <span className="text-xs font-black text-slate-800">
+                        {patientHistory.age ? `${patientHistory.age} سنة` : (patientHistory.dateOfBirth ? `${new Date().getFullYear() - new Date(patientHistory.dateOfBirth).getFullYear()} سنة` : 'غير مسجل')}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">الوزن المستهدف</span>
+                      <span className="text-xs font-black text-emerald-700">
+                        {patientHistory.targetWeightKg ? `${patientHistory.targetWeightKg} كجم` : 'لم يحدد'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">الحالة الاجتماعية والأطفال</span>
+                      <span className="text-xs font-bold text-purple-900">
+                        {patientHistory.maritalStatus || 'متزوج'}
+                        {patientHistory.hasChildren ? ` • (${patientHistory.childrenCount || 1} أطفال)` : ' • لا يوجد أطفال'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">الحمل والرضاعة</span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {patientHistory.gender === 'ذكر' ? 'غير متطابق' : (
+                          <>
+                            {patientHistory.isPregnant ? <span className="text-rose-600 font-black">حامل 🤰</span> : 'لا يوجد حمل'}
+                            {' • '}
+                            {patientHistory.isLactating ? <span className="text-blue-600 font-bold">ترضع طبيعياً 🍼</span> : 'لا ترضع'}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Surgical & Medical History */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <div className="bg-amber-50/70 border border-amber-200/80 p-3 rounded-xl space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-amber-900">
+                        <Scissors className="w-3.5 h-3.5 text-amber-700" />
+                        <span>العمليات الجراحية السابقة:</span>
+                      </div>
+                      <p className="text-xs font-bold text-amber-950">
+                        {patientHistory.hasOperations && patientHistory.operationsHistory?.trim()
+                          ? patientHistory.operationsHistory
+                          : (patientHistory.hasOperations ? 'أجرى عمليات سابقة' : 'لا توجد عمليات جراحية سابقة')}
+                      </p>
+                    </div>
+
+                    <div className="bg-blue-50/70 border border-blue-200/80 p-3 rounded-xl space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-blue-900">
+                        <Pill className="w-3.5 h-3.5 text-blue-700" />
+                        <span>الأدوية والعلاجات المنتظمة:</span>
+                      </div>
+                      <p className="text-xs font-bold text-blue-950">
+                        {patientHistory.takesMedications && patientHistory.medicationsHistory?.trim()
+                          ? patientHistory.medicationsHistory
+                          : (patientHistory.takesMedications ? 'يتناول أدوية بانتظام' : 'لا يتناول أدوية منتظمة')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Bad Lifestyle Habits (Last Box from form) */}
+                  {(() => {
+                    let habits: any = null;
+                    if (patientHistory.badHabits) {
+                      try {
+                        habits = typeof patientHistory.badHabits === 'string'
+                          ? JSON.parse(patientHistory.badHabits)
+                          : patientHistory.badHabits;
+                      } catch (e) {
+                        habits = null;
+                      }
+                    }
+
+                    const activeHabits = [];
+                    if (habits?.chipsy) activeHabits.push({ label: '🥔 شيبسي ومقرمشات', color: 'bg-rose-100 text-rose-800 border-rose-200' });
+                    if (habits?.cola) activeHabits.push({ label: '🥤 كولا ومياه غازية', color: 'bg-rose-100 text-rose-800 border-rose-200' });
+                    if (habits?.sweets) activeHabits.push({ label: '🍫 حلويات وسكريات', color: 'bg-amber-100 text-amber-800 border-amber-200' });
+                    if (habits?.nuts) activeHabits.push({ label: '🥜 تسالي ومكسرات ولب', color: 'bg-orange-100 text-orange-800 border-orange-200' });
+                    if (habits?.delivery) activeHabits.push({ label: '🍔 أكل دليفري وجاهز', color: 'bg-red-100 text-red-800 border-red-200' });
+                    if (habits?.coffeeTea) activeHabits.push({ label: '☕ نسكافيه ومشروبات بسكر', color: 'bg-amber-100 text-amber-800 border-amber-200' });
+                    if (habits?.lowWater) activeHabits.push({ label: '💧 قلة شرب الماء', color: 'bg-sky-100 text-sky-800 border-sky-200' });
+                    if (habits?.lateEating) activeHabits.push({ label: '🌙 أكل متأخر بالليل', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' });
+                    if (habits?.bakery) activeHabits.push({ label: '🥐 معجنات وفينو ومخبوزات', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' });
+                    if (habits?.friedFood) activeHabits.push({ label: '🍟 مقليات وأطعمة دسمة', color: 'bg-orange-100 text-orange-800 border-orange-200' });
+                    if (habits?.smoking) activeHabits.push({ label: '🚬 تدخين أو شيشة', color: 'bg-slate-200 text-slate-800 border-slate-300' });
+
+                    return (
+                      <div className="bg-rose-50/50 border border-rose-200/70 p-2.5 rounded-xl space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-rose-900">
+                          <Coffee className="w-3.5 h-3.5 text-rose-700" />
+                          <span>العادات الغذائية واليومية غير الصحية:</span>
+                        </div>
+                        {activeHabits.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {activeHabits.map((h, i) => (
+                              <span key={i} className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${h.color}`}>
+                                {h.label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-medium text-slate-500">لا توجد عادات غير صحية مسجلة</p>
+                        )}
+                        {habits?.otherHabits && typeof habits.otherHabits === 'string' && habits.otherHabits.trim() && (
+                          <p className="text-xs font-bold text-slate-700 bg-white/80 p-1.5 rounded-lg border border-slate-200 mt-1">
+                            <span className="text-rose-700 font-extrabold">ملاحظات إضافية: </span>
+                            {habits.otherHabits}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Patient Weight & Measurement Overview Grid */}
               <div className="space-y-3">
@@ -585,13 +911,34 @@ export const DoctorDashboard: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl">
                     <span className="text-[11px] text-slate-500 font-semibold block mb-1">الوزن الحالي اليوم</span>
                     <span className="text-xl font-black text-purple-700">
                       {selectedVisit.currentMeasurement?.weightKg || '--'} <span className="text-xs font-normal">كجم</span>
                     </span>
                   </div>
+
+                  {/* BMI Indicator Card */}
+                  {(() => {
+                    const curW = selectedVisit.currentMeasurement?.weightKg || 0;
+                    const curH = selectedVisit.currentMeasurement?.heightCm || patientHistory?.heightCm || 0;
+                    const curBmi = (curW > 0 && curH > 0) ? parseFloat((curW / Math.pow(curH / 100, 2)).toFixed(1)) : (selectedVisit.currentMeasurement?.bmi || null);
+                    const bmiInfo = curBmi ? getBmiDetails(curBmi) : null;
+                    return (
+                      <div className={`p-3.5 rounded-2xl border ${bmiInfo ? bmiInfo.color : 'bg-slate-50 border-slate-200'}`}>
+                        <span className="text-[11px] font-bold block mb-1">مؤشر كتلة الجسم (BMI)</span>
+                        {curBmi ? (
+                          <div>
+                            <span className="text-xl font-black">{curBmi} <span className="text-[10px] font-normal">كجم/م²</span></span>
+                            <span className="block text-[11px] font-black mt-0.5">{bmiInfo?.category}</span>
+                          </div>
+                        ) : (
+                          <span className="text-sm font-bold text-slate-400">--</span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl">
                     <span className="text-[11px] text-slate-500 font-semibold block mb-1">نسبة الدهون</span>
@@ -720,13 +1067,31 @@ export const DoctorDashboard: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          setPrintAutoMode('pdf');
+                          setPrintAutoMode('whatsapp');
                           setShowPrintModal(true);
                         }}
                         disabled={!doctorNotes.trim()}
                         className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
                           doctorNotes.trim()
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs shadow-emerald-600/20'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        }`}
+                        title="تنسيق وإرسال النظام والقياسات عبر الواتساب للمريض"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>إرسال واتساب</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintAutoMode('pdf');
+                          setShowPrintModal(true);
+                        }}
+                        disabled={!doctorNotes.trim()}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                          doctorNotes.trim()
+                            ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-xs shadow-teal-600/20'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         }`}
                         title="توليد وتنزيل ملف PDF للنظام الغذائي المختار"
@@ -830,6 +1195,7 @@ export const DoctorDashboard: React.FC = () => {
           dietContent={doctorNotes}
           autoPrint={printAutoMode === 'print'}
           autoPdf={printAutoMode === 'pdf'}
+          initialTab={printAutoMode === 'whatsapp' ? 'whatsapp' : 'print'}
           onClose={() => {
             setShowPrintModal(false);
             setPrintAutoMode(null);
@@ -1035,6 +1401,40 @@ export const DoctorDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Live Interactive BMI Scale Card */}
+            {(() => {
+              const wNum = parseFloat(editWeightKg);
+              const hNum = parseFloat(editHeightCm) || (patientHistory?.heightCm ? parseFloat(patientHistory.heightCm) : 0);
+              const liveBmi = (wNum > 0 && hNum > 0) ? parseFloat((wNum / Math.pow(hNum / 100, 2)).toFixed(1)) : null;
+              const bmiInfo = liveBmi ? getBmiDetails(liveBmi) : null;
+
+              return (
+                <div className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between ${
+                  bmiInfo ? bmiInfo.color : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-white/80 shadow-xs flex items-center justify-center font-bold text-slate-800">
+                      <Activity className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-bold block">مؤشر كتلة الجسم التفاعلي (BMI)</span>
+                      <span className="text-xs font-black">
+                        {liveBmi ? `التصنيف: ${bmiInfo?.category}` : 'اكتب الوزن والطول ليتم حساب المؤشر لحظياً'}
+                      </span>
+                    </div>
+                  </div>
+                  {liveBmi ? (
+                    <div className="text-right font-mono">
+                      <span className="text-2xl font-black">{liveBmi}</span>
+                      <span className="text-[10px] block font-bold text-slate-600">كجم/م²</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold text-slate-400">--</span>
+                  )}
+                </div>
+              );
+            })()}
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
@@ -1059,6 +1459,44 @@ export const DoctorDashboard: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Edit Patient Medical, Lifestyle, Surgical & Bad Habits Modal */}
+      {selectedVisit && (
+        <EditPatientMedicalModal
+          isOpen={isEditPatientOpen}
+          onClose={() => setIsEditPatientOpen(false)}
+          patientId={selectedVisit.patientId}
+          initialData={patientHistory}
+          onUpdated={() => {
+            handleRefreshPatientHistory(selectedVisit.patientId);
+            setSuccessMessage('تم تحديث السجل الطبي والعادات والأدوية بنجاح!');
+            setTimeout(() => setSuccessMessage(null), 4000);
+          }}
+        />
+      )}
+
+      {/* Add Single Past Historical Weight Record Modal */}
+      {selectedVisit && (
+        <AddPastWeightModal
+          isOpen={isAddPastWeightOpen}
+          onClose={() => setIsAddPastWeightOpen(false)}
+          patientId={selectedVisit.patientId}
+          patientName={selectedVisit.patientName}
+          onAdded={() => {
+            handleRefreshPatientHistory(selectedVisit.patientId);
+            fetchQueue();
+            setSuccessMessage('تمت إضافة الوزن السابق إلى سجل وأرشيف المريض بنجاح!');
+            setTimeout(() => setSuccessMessage(null), 4000);
+          }}
+        />
+      )}
+
+      {/* Register New Patient with Full Archive & Past Weights History Modal */}
+      <AddPatientArchiveModal
+        isOpen={isAddPatientArchiveOpen}
+        onClose={() => setIsAddPatientArchiveOpen(false)}
+        onPatientCreated={handlePatientCreatedFromArchive}
+      />
 
     </div>
   );

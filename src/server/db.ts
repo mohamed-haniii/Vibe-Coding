@@ -25,17 +25,48 @@ function normalizeParams(params: any[]): any[] {
   return params;
 }
 
-function saveDb() {
+let saveTimer: NodeJS.Timeout | null = null;
+let isSaving = false;
+let needsSaveAgain = false;
+
+export async function flushDb() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!sqlJsDb || !dbFilePath) return;
+  if (isSaving) {
+    needsSaveAgain = true;
+    return;
+  }
+  isSaving = true;
+  try {
+    const data = sqlJsDb.export();
+    await fs.promises.writeFile(dbFilePath, Buffer.from(data));
+  } catch (err) {
+    console.error('[DB Save Error]', err);
+  } finally {
+    isSaving = false;
+    if (needsSaveAgain) {
+      needsSaveAgain = false;
+      saveDb(false);
+    }
+  }
+}
+
+function saveDb(immediate = false) {
   if (inTransaction) {
     return;
   }
-  if (sqlJsDb && dbFilePath) {
-    try {
-      const data = sqlJsDb.export();
-      fs.writeFileSync(dbFilePath, Buffer.from(data));
-    } catch (err) {
-      console.error('[DB Save Error]', err);
-    }
+  if (immediate) {
+    flushDb();
+    return;
+  }
+  if (!saveTimer) {
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      flushDb();
+    }, 200);
   }
 }
 
@@ -286,6 +317,88 @@ async function initSchema(db: AppDb) {
     );
   `);
 
+  // Cash Drawer Transactions Table (Cash Out / Expenses & Cash In)
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS drawer_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shift_id INTEGER NOT NULL,
+      cashier_id INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('Expense', 'CashIn')),
+      amount REAL NOT NULL,
+      category TEXT,
+      notes TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (shift_id) REFERENCES shifts(id),
+      FOREIGN KEY (cashier_id) REFERENCES users(id)
+    );
+  `);
+
+  // Saved Operations Catalog Table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_operations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  // Saved Medications Catalog Table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_medications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  // Safe migrations for patient medical and personal history fields
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN age INTEGER;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN target_weight_kg REAL;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN marital_status TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN has_children INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN children_count INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN is_lactating INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN is_pregnant INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN has_operations INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN operations_history TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN takes_medications INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN medications_history TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN female_reproductive_notes TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN bad_habits TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN chief_complaints TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN past_acupuncture_regimes TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN occupation TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN is_maintenance_mode INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN maintenance_start_date TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN maintenance_target_weight REAL;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN is_period_regular INTEGER DEFAULT 1;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN has_contraception INTEGER DEFAULT 0;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN contraception_type TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE patients ADD COLUMN chronic_diseases_notes TEXT;`); } catch (_) {}
+  try { await db.exec(`ALTER TABLE visits ADD COLUMN is_archive INTEGER DEFAULT 0;`); } catch (_) {}
+
+  // Automatically mark legacy historical archive visits so they never appear in daily clinic reports or register as 0 EGP cashier visits
+  try {
+    await db.exec(`UPDATE visits SET is_archive = 1 WHERE idempotency_key LIKE 'HIST-%' OR idempotency_key LIKE 'INIT-%' OR queue_number = 0 OR price = 0;`);
+  } catch (_) {}
+
+  // High performance database indexes for instant query execution under heavy volume
+  try {
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_visits_patient_id ON visits(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_visits_created_at ON visits(created_at);
+      CREATE INDEX IF NOT EXISTS idx_visits_status ON visits(status);
+      CREATE INDEX IF NOT EXISTS idx_visits_shift_id ON visits(shift_id);
+      CREATE INDEX IF NOT EXISTS idx_visits_archive ON visits(is_archive);
+      CREATE INDEX IF NOT EXISTS idx_patient_measurements_patient_id ON patient_measurements(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_patient_measurements_visit_id ON patient_measurements(visit_id);
+      CREATE INDEX IF NOT EXISTS idx_patient_measurements_recorded_at ON patient_measurements(recorded_at);
+      CREATE INDEX IF NOT EXISTS idx_patients_code ON patients(code);
+      CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
+      CREATE INDEX IF NOT EXISTS idx_patients_full_name ON patients(full_name);
+    `);
+  } catch (_) {}
+
   // Audit Logs Table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -403,7 +516,49 @@ async function seedInitialData(db: AppDb) {
     );
   }
 
-  // 3. Seed initial sample patients for testing convenience if none exist
+  // 3. Seed initial saved operations if none exist
+  const opCount = await db.get('SELECT COUNT(*) as count FROM saved_operations');
+  if (!opCount || opCount.count === 0) {
+    const defaultOps = [
+      'ولادة قيصرية (Cesarean section - CS)',
+      'استئصال المرارة (Cholecystectomy)',
+      'استئصال الزائدة الدودية (Appendectomy)',
+      'تكميم المعدة (Sleeve gastrectomy)',
+      'تحويل مسار المعدة (Gastric bypass)',
+      'بالون المعدة (Gastric balloon)',
+      'استئصال اللوزتين (Tonsillectomy)',
+      'عملية فتق (Hernia repair)',
+      'استئصال الغدة الدرقية (Thyroidectomy)',
+      'عملية غضروف / عمود فقري'
+    ];
+    for (const op of defaultOps) {
+      try {
+        await db.run(`INSERT INTO saved_operations (name, created_at) VALUES (?, ?)`, [op, now]);
+      } catch (_) {}
+    }
+  }
+
+  // 4. Seed initial saved medications if none exist
+  const medCount = await db.get('SELECT COUNT(*) as count FROM saved_medications');
+  if (!medCount || medCount.count === 0) {
+    const defaultMeds = [
+      'علاج الغدة الدرقية (Eltroxin / Euthyrox)',
+      'أدوية الضغط (Concor / Capoten / Norvasc)',
+      'أدوية السكر (Metformin / Glucophage / Janumet / Insulin)',
+      'فيتامين د وكالسيوم (Vit D / Calcium)',
+      'أدوية كوليسترول ودهون ثلاثية (Atorvastatin / Lipitor / Crestor)',
+      'فيتامينات ومكملات غذائية (Multivitamins / Omega 3)',
+      'مسكنات ومضادات التهاب (NSAIDs)',
+      'أدوية حساسية وربو'
+    ];
+    for (const med of defaultMeds) {
+      try {
+        await db.run(`INSERT INTO saved_medications (name, created_at) VALUES (?, ?)`, [med, now]);
+      } catch (_) {}
+    }
+  }
+
+  // 5. Seed initial sample patients for testing convenience if none exist
   const patientCount = await db.get('SELECT COUNT(*) as count FROM patients');
   if (!patientCount || patientCount.count === 0) {
     await db.run(

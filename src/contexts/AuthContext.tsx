@@ -18,14 +18,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(
-    sessionStorage.getItem('clinic_jwt_token') || localStorage.getItem('clinic_jwt_token')
+    sessionStorage.getItem('clinic_jwt_token')
   );
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // Clear any legacy persistent tokens from localStorage to enforce session-only auth
+    localStorage.removeItem('clinic_jwt_token');
+
     async function loadUser() {
-      const storedToken = sessionStorage.getItem('clinic_jwt_token') || localStorage.getItem('clinic_jwt_token');
+      const storedToken = sessionStorage.getItem('clinic_jwt_token');
 
       if (!storedToken) {
         setToken(null);
@@ -44,7 +47,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Only clear token if server explicitly rejected auth with 401/403
         if (err.status === 401 || err.status === 403) {
           sessionStorage.removeItem('clinic_jwt_token');
-          localStorage.removeItem('clinic_jwt_token');
           setToken(null);
           setUser(null);
         }
@@ -68,8 +70,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = (newToken: string, newUser: User, newShift: Shift | null) => {
+    // Store only in sessionStorage so closing the app / window automatically logs out
     sessionStorage.setItem('clinic_jwt_token', newToken);
-    localStorage.setItem('clinic_jwt_token', newToken);
+    localStorage.removeItem('clinic_jwt_token');
     setToken(newToken);
     setUser(newUser);
     setCurrentShift(newShift);

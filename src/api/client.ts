@@ -30,7 +30,7 @@ export async function apiRequest<T = any>(
   let attempt = 0;
 
   while (attempt <= maxRetries) {
-    const token = sessionStorage.getItem('clinic_jwt_token') || localStorage.getItem('clinic_jwt_token');
+    const token = sessionStorage.getItem('clinic_jwt_token');
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -39,10 +39,15 @@ export async function apiRequest<T = any>(
     };
 
     try {
+      let bodyData: string | undefined = undefined;
+      if (options.body !== undefined) {
+        bodyData = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+      }
+
       const response = await fetch(`/api${endpoint}`, {
         method: options.method || 'GET',
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined
+        body: bodyData
       });
 
       const data = await response.json().catch(() => ({}));

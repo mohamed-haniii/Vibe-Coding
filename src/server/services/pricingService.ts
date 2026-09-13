@@ -16,23 +16,64 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
 
   // Get official visit types from DB
   const visitTypes = await db.all('SELECT id, name, price FROM visit_types WHERE is_active = 1');
-  const newConsultType = visitTypes.find(vt => vt.id === 1) || { id: 1, name: 'كشف جديد', price: 200 };
-  const followupType = visitTypes.find(vt => vt.id === 2) || { id: 2, name: 'إعادة', price: 50 };
+  const rawNewConsult = visitTypes.find(vt => vt.id === 1 || vt.name === 'كشف جديد');
+  const rawFollowup = visitTypes.find(vt => vt.id === 2 || vt.name === 'إعادة');
+  const rawMaintenance = visitTypes.find(vt => vt.id === 3 || vt.name === 'نظام تثبيت' || vt.name.includes('تثبيت'));
 
-  // Get last non-cancelled visit date for patient
-  const lastVisit = await db.get(
+  const newConsultType = { id: 1, name: 'كشف جديد', price: (rawNewConsult && Number(rawNewConsult.price) > 0) ? Number(rawNewConsult.price) : 200 };
+  const followupType = { id: 2, name: 'إعادة', price: (rawFollowup && Number(rawFollowup.price) > 0) ? Number(rawFollowup.price) : 50 };
+  const maintenanceType = { id: 3, name: 'نظام تثبيت', price: (rawMaintenance && Number(rawMaintenance.price) > 0) ? Number(rawMaintenance.price) : 60 };
+
+  // Check if patient is on maintenance / stabilization program
+  const patient = await db.get('SELECT id, is_maintenance_mode, maintenance_target_weight FROM patients WHERE id = ?', [patientId]);
+
+  // Get last non-cancelled visit date for patient (prioritizing real visits)
+  const lastRealVisit = await db.get(
     `SELECT created_at FROM visits 
-     WHERE patient_id = ? AND status != 'Cancelled' 
+     WHERE patient_id = ? AND status != 'Cancelled' AND (is_archive = 0 OR is_archive IS NULL) AND idempotency_key NOT LIKE 'HIST-%' AND queue_number > 0
      ORDER BY id DESC LIMIT 1`,
     [patientId]
   );
 
-  // If no previous visit exists
-  if (!lastVisit || !lastVisit.created_at) {
+  let lastDate: Date | null = lastRealVisit?.created_at ? new Date(lastRealVisit.created_at) : null;
+  let lastDateString: string | null = lastRealVisit?.created_at || null;
+
+  // If no real visit yet, check if there's any historical measurement
+  if (!lastDate) {
+    const lastMeasurement = await db.get(
+      `SELECT recorded_at FROM patient_measurements WHERE patient_id = ? ORDER BY id DESC LIMIT 1`,
+      [patientId]
+    );
+    if (lastMeasurement?.recorded_at) {
+      lastDate = new Date(lastMeasurement.recorded_at);
+      lastDateString = lastMeasurement.recorded_at;
+    }
+  }
+
+  const now = new Date();
+  const diffTime = lastDate ? now.getTime() - lastDate.getTime() : 0;
+  const daysSinceLastVisit = lastDate ? Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24))) : null;
+
+  // If patient is enrolled in stabilization mode, bill on maintenance mode price
+  if (patient && Boolean(patient.is_maintenance_mode)) {
+    return {
+      recommendedVisitTypeId: maintenanceType.id,
+      recommendedVisitTypeName: maintenanceType.name,
+      finalPrice: maintenanceType.price,
+      daysSinceLastVisit,
+      lastVisitDate: lastDateString,
+      statusBadge: `نظام تثبيت الوزن نشط 🛡️ ${patient.maintenance_target_weight ? `(الوزن المثبت: ${patient.maintenance_target_weight} كجم)` : ''} - سعر جلسة التثبيت: ${maintenanceType.price} ج`,
+      reasonCode: 'MAINTENANCE_PROGRAM',
+      isDelayed: false
+    };
+  }
+
+  // If no previous visit or measurement exists
+  if (!lastDate) {
     return {
       recommendedVisitTypeId: newConsultType.id,
       recommendedVisitTypeName: newConsultType.name,
-      finalPrice: Number(newConsultType.price),
+      finalPrice: newConsultType.price,
       daysSinceLastVisit: null,
       lastVisitDate: null,
       statusBadge: 'أول كشف للمريض بالنظام (كشف جديد)',
@@ -40,11 +81,6 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
       isDelayed: false
     };
   }
-
-  const lastDate = new Date(lastVisit.created_at);
-  const now = new Date();
-  const diffTime = now.getTime() - lastDate.getTime();
-  const daysSinceLastVisit = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
 
   // If requestedVisitTypeId is provided and is NOT follow-up or new (e.g. stabilization = id 3)
   if (requestedVisitTypeId && requestedVisitTypeId !== 1 && requestedVisitTypeId !== 2) {
@@ -55,7 +91,7 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
         recommendedVisitTypeName: customType.name,
         finalPrice: Number(customType.price),
         daysSinceLastVisit,
-        lastVisitDate: lastVisit.created_at,
+        lastVisitDate: lastDateString,
         statusBadge: `نوع زيارة مخصص (${customType.name})`,
         reasonCode: 'CUSTOM_TYPE',
         isDelayed: false
@@ -81,9 +117,9 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
     return {
       recommendedVisitTypeId: newConsultType.id,
       recommendedVisitTypeName: newConsultType.name,
-      finalPrice: Number(newConsultType.price),
+      finalPrice: Math.max(1, Number(newConsultType.price)),
       daysSinceLastVisit,
-      lastVisitDate: lastVisit.created_at,
+      lastVisitDate: lastDateString,
       statusBadge: `انقطع المريض أكثر من ${delayRevertNewDays} يوم (${daysSinceLastVisit} يوم) - تحول تلقائياً إلى كشف جديد`,
       reasonCode: 'EXPIRED_OVER_LIMIT',
       isDelayed: true
@@ -95,9 +131,9 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
     return {
       recommendedVisitTypeId: followupType.id,
       recommendedVisitTypeName: followupType.name,
-      finalPrice: delayTier2Price,
+      finalPrice: Math.max(1, delayTier2Price),
       daysSinceLastVisit,
-      lastVisitDate: lastVisit.created_at,
+      lastVisitDate: lastDateString,
       statusBadge: `إعادة متأخرة (تأخير أكثر من ${delayTier1Days} يوم: ${daysSinceLastVisit} يوم) - السعر المحدد من الدكتورة: ${delayTier2Price} ج`,
       reasonCode: 'DELAYED_TIER_2',
       isDelayed: true
@@ -109,9 +145,9 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
     return {
       recommendedVisitTypeId: followupType.id,
       recommendedVisitTypeName: followupType.name,
-      finalPrice: delayTier1Price,
+      finalPrice: Math.max(1, delayTier1Price),
       daysSinceLastVisit,
-      lastVisitDate: lastVisit.created_at,
+      lastVisitDate: lastDateString,
       statusBadge: `إعادة متأخرة (تأخير أكثر من ${delayGraceDays} يوم: ${daysSinceLastVisit} يوم) - السعر المحدد من الدكتورة: ${delayTier1Price} ج`,
       reasonCode: 'DELAYED_TIER_1',
       isDelayed: true
@@ -122,9 +158,9 @@ export async function getSmartVisitPricing(patientId: number, requestedVisitType
   return {
     recommendedVisitTypeId: followupType.id,
     recommendedVisitTypeName: followupType.name,
-    finalPrice: Number(followupType.price),
+    finalPrice: Math.max(1, Number(followupType.price)),
     daysSinceLastVisit,
-    lastVisitDate: lastVisit.created_at,
+    lastVisitDate: lastDateString,
     statusBadge: `إعادة دورية منتظمة (خلال المهلة المحددة: ${daysSinceLastVisit} يوم) - السعر: ${followupType.price} ج`,
     reasonCode: 'REGULAR_FOLLOWUP',
     isDelayed: false

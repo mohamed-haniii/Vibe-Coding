@@ -21,6 +21,17 @@ export interface SmartPricingResult {
   isDelayed: boolean;
 }
 
+export type BadHabitLevel = 'NONE' | 'SIMPLE' | 'MODERATE' | 'SEVERE';
+
+export interface BadHabitsData {
+  cola?: BadHabitLevel;
+  chepcy?: BadHabitLevel;
+  sweets?: BadHabitLevel;
+  nuts?: BadHabitLevel;
+  delivery?: BadHabitLevel;
+  otherNotes?: string;
+}
+
 export interface Patient {
   id: number;
   code: string; // e.g. "P-0001"
@@ -28,10 +39,45 @@ export interface Patient {
   phone: string;
   gender: 'أنثى' | 'ذكر';
   dateOfBirth?: string;
+  age?: number;
   heightCm?: number;
+  targetWeightKg?: number;
+  maritalStatus?: string;
+  hasChildren?: boolean;
+  childrenCount?: number;
+  isLactating?: boolean;
+  isPregnant?: boolean;
+  isPeriodRegular?: boolean;
+  hasContraception?: boolean;
+  contraceptionType?: 'أقراص' | 'لولب' | 'ربط أنابيب' | string;
+  hasOperations?: boolean;
+  operationsHistory?: string;
+  takesMedications?: boolean;
+  medicationsHistory?: string;
+  femaleReproductiveNotes?: string;
+  badHabits?: BadHabitsData;
+  chiefComplaints?: string;
+  chronicDiseasesNotes?: string;
+  pastAcupunctureRegimes?: string;
+  occupation?: string;
   notes?: string;
+  isMaintenanceMode?: boolean;
+  maintenanceStartDate?: string;
+  maintenanceTargetWeight?: number;
   createdAt: string;
   smartPricing?: SmartPricingResult;
+}
+
+export interface DrawerTransaction {
+  id: number;
+  shiftId: number;
+  cashierId: number;
+  cashierName?: string;
+  type: 'Expense' | 'CashIn';
+  amount: number;
+  category?: string;
+  notes: string;
+  createdAt: string;
 }
 
 export interface VisitType {
@@ -72,6 +118,7 @@ export interface Visit {
   visitTypeId: number;
   visitTypeName: string;
   price: number;
+  isArchive?: boolean;
   status: VisitStatus;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;
@@ -111,6 +158,10 @@ export interface Shift {
   newVisitsCount: number;
   followupVisitsCount: number;
   maintenanceVisitsCount: number;
+  totalCashIn?: number;
+  totalExpenses?: number;
+  netDrawerCash?: number;
+  drawerTransactions?: DrawerTransaction[];
 }
 
 export interface AuditLog {
@@ -136,6 +187,9 @@ export interface MonthlyReport {
   totalRevenue: number;
   totalVisitsCount: number;
   totalPatientsCount: number;
+  totalExpenses?: number;
+  totalCashIn?: number;
+  netDrawerCash?: number;
   newVisitsRevenue: number;
   newVisitsCount: number;
   followupVisitsRevenue: number;
@@ -147,6 +201,7 @@ export interface MonthlyReport {
     dayName: string;
     totalVisits: number;
     revenue: number;
+    expenses?: number;
   }[];
   visitTypeDistribution: {
     name: string;
@@ -164,14 +219,21 @@ export interface ShiftDetailReport {
   isOpen: boolean;
   totalVisits: number;
   totalRevenue: number;
+  cashRevenue?: number;
+  instapayRevenue?: number;
+  totalCashIn: number;
+  totalExpenses: number;
+  netDrawerCash: number;
   newVisitsCount: number;
   followupVisitsCount: number;
   maintenanceVisitsCount: number;
+  drawerTransactions?: DrawerTransaction[];
   visits: {
     visitId: number;
     patientName: string;
     visitTypeName: string;
     amount: number;
+    paymentMethod?: string;
     createdAt: string;
   }[];
 }
@@ -222,6 +284,7 @@ export interface ClinicSettings {
   pdf_show_next_date?: boolean;
   pdf_font_size?: 'small' | 'medium' | 'large';
   pdf_paper_size?: 'A4' | 'A5' | 'Thermal';
+  patient_clinical_data_entry_role?: 'both' | 'doctor' | 'assistant';
 }
 
 export interface DailyReport {
@@ -233,12 +296,17 @@ export interface DailyReport {
   totalRevenue: number;
   cashRevenue: number;
   instapayRevenue: number;
+  totalExpenses: number;
+  totalCashIn: number;
+  netDrawerCash: number;
   newVisitsCount: number;
   newVisitsRevenue: number;
   followupVisitsCount: number;
   followupVisitsRevenue: number;
   maintenanceVisitsCount: number;
   maintenanceVisitsRevenue: number;
+  shifts?: ShiftDetailReport[];
+  drawerTransactions: DrawerTransaction[];
   visits: {
     id: number;
     patientName: string;

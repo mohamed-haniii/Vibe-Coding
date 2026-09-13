@@ -15,12 +15,13 @@ import {
   BarChart3, 
   Users, 
   Clock, 
-  QrCode,
-  Bell,
-  Settings,
-  Sun,
-  Moon,
-  History,
+  QrCode, 
+  Bell, 
+  Settings, 
+  Sun, 
+  Moon, 
+  History, 
+  FolderHeart,
   Laptop
 } from 'lucide-react';
 
@@ -95,17 +96,31 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
               {/* Navigation Tabs based on Role */}
               <nav className="hidden md:flex items-center space-x-reverse space-x-1 pr-6 border-r border-slate-200">
                 {user.role === 'Assistant' && (
-                  <button
-                    onClick={() => setCurrentTab('reception')}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      currentTab === 'reception'
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
-                  >
-                    <Receipt className="w-4 h-4" />
-                    شاشة الاستقبال والكاشير
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setCurrentTab('reception')}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        currentTab === 'reception'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <Receipt className="w-4 h-4" />
+                      شاشة الاستقبال والكاشير
+                    </button>
+
+                    <button
+                      onClick={() => setCurrentTab('patients')}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        currentTab === 'patients'
+                          ? 'bg-blue-50 text-blue-700 font-bold'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <FolderHeart className="w-4 h-4 text-blue-600" />
+                      سجل وقاعدة المرضى
+                    </button>
+                  </>
                 )}
 
                 {user.role === 'Admin' && (
@@ -120,6 +135,19 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
                     >
                       <Stethoscope className="w-4 h-4" />
                       قائمة الانتظار والكشف
+                    </button>
+
+                    <button
+                      onClick={() => setCurrentTab('patients')}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        currentTab === 'patients'
+                          ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-black'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900'
+                      }`}
+                      title="سجل وقاعدة بيانات المرضى الشاملة"
+                    >
+                      <FolderHeart className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                      سجل المرضى
                     </button>
 
                     <button
@@ -191,17 +219,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
                 </div>
               )}
 
-              {/* Cloud Sync Status Indicator & Share Button */}
+              {/* Multi-Device & LAN Sync Button */}
               <button
                 onClick={() => setShowNetworkModal(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md shadow-emerald-500/20 transition-all cursor-pointer border border-emerald-400/30"
-                title="حالة المزامنة السحابية الفورية (Google Firebase)"
+                title="ربط ومزامنة أجهزة العيادة (الاستقبال / الدكتورة / التابلت)"
               >
                 <div className="flex items-center gap-1 bg-white/20 px-1.5 py-0.5 rounded-md text-[10px]">
                   <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
                   <span>متصل</span>
                 </div>
-                <span className="hidden sm:inline">☁️ المزامنة السحابية</span>
+                <span className="hidden sm:inline">🔗 ربط الأجهزة والشبكة</span>
               </button>
 
               {/* Dark / Light Mode Toggle */}

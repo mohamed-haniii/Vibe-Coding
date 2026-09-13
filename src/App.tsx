@@ -11,6 +11,7 @@ import { ReportsDashboard } from './pages/doctor/ReportsDashboard';
 import { UsersManagement } from './pages/doctor/UsersManagement';
 import { AdminSettings } from './pages/doctor/AdminSettings';
 import { AuditLogsPage } from './pages/doctor/AuditLogsPage';
+import { PatientsDirectoryPage } from './pages/doctor/PatientsDirectoryPage';
 import { WifiOff, RefreshCw } from 'lucide-react';
 
 function MainAppContent() {
@@ -59,7 +60,7 @@ function MainAppContent() {
           <div className="flex items-center gap-2">
             <WifiOff className="w-4 h-4 text-amber-100 shrink-0 animate-pulse" />
             <span>
-              جاري إعادة المزامنة مع السيرفر السحابي (Firebase)... جميع بيانات العيادة وشيفت العمل محفوظة بأمان.
+              جاري الاتصال بسيرفر العيادة الرئيسي... جميع بيانات العيادة وشيفت العمل محفوظة بأمان في قاعدة البيانات المحلية.
             </span>
           </div>
           <button
@@ -74,12 +75,19 @@ function MainAppContent() {
 
       <main className="pb-12">
         {user.role === 'Assistant' && (
-          <ReceptionDashboard />
+          <>
+            {currentTab === 'patients' ? (
+              <PatientsDirectoryPage />
+            ) : (
+              <ReceptionDashboard />
+            )}
+          </>
         )}
 
         {user.role === 'Admin' && (
           <>
             {currentTab === 'queue' && <DoctorDashboard />}
+            {currentTab === 'patients' && <PatientsDirectoryPage />}
             {currentTab === 'reports' && <ReportsDashboard />}
             {currentTab === 'audit' && <AuditLogsPage />}
             {currentTab === 'users' && <UsersManagement />}
@@ -87,8 +95,6 @@ function MainAppContent() {
           </>
         )}
       </main>
-
-      <NotificationToastContainer />
     </div>
   );
 }

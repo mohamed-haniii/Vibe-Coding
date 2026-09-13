@@ -1,22 +1,30 @@
 {
   "short_name": "عيادة التخسيس",
   "name": "برنامج عيادة التخسيس والتغذية العلاجية",
-  "description": "تطبيق ومحرّك إدارة عيادات التخسيس المباشر والربط المزدوج مع الاستقبال والكاشير",
+  "description": "منظومة متكاملة لإدارة عيادة التخسيس ومتابعة كشوفات المرضى والاستقبال",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
     {
       "src": "/assets/icon-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "/assets/icon-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
   "background_color": "#0f172a",
   "theme_color": "#7c3aed",
   "display": "standalone",
-  "orientation": "any"
+  "orientation": "any",
+  "scope": "/"
 }

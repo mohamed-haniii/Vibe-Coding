@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiRequest } from '../api/client';
-import { seedFirestoreIfEmpty } from '../services/firebaseSync';
-import { Stethoscope, User, Lock, LogIn, Sun, Moon, Cloud, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+import { Stethoscope, User, Lock, LogIn, Sun, Moon } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -12,11 +11,6 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  useEffect(() => {
-    // Check and seed Firestore default data on startup
-    seedFirestoreIfEmpty();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,30 +57,6 @@ export const Login: React.FC = () => {
           </>
         )}
       </button>
-
-      {/* Firebase Cloud Sync Status Card */}
-      <div className="max-w-md w-full bg-gradient-to-r from-emerald-900/90 via-slate-900 to-teal-950 text-white rounded-3xl p-4 border border-emerald-500/40 shadow-xl relative overflow-hidden text-right">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-2xl flex items-center justify-center shrink-0">
-              <Cloud className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>سيرفر سحابي متصل (Google Firebase)</span>
-              </div>
-              <p className="text-[11px] text-slate-300 font-medium mt-0.5">
-                مزامنة فورية وتلقائية بين شاشة الدكتورة وشاشة الاستقبال
-              </p>
-            </div>
-          </div>
-          <div className="hidden sm:flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-500/30">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>سحابي جاهز</span>
-          </div>
-        </div>
-      </div>
 
       <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-700 p-8 text-right relative overflow-hidden">
         

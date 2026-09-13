@@ -1,75 +1,54 @@
 @echo off
-chcp 65001 > nul
-title تشغيل برنامج عيادة التخسيس والتغذية
+setlocal EnableDelayedExpansion
+title Clinic Management System - Server
 color 0A
 
 cd /d "%~dp0"
 
-:: Check if desktop shortcut exists, if not create it silently once
-if not exist "%USERPROFILE%\Desktop\برنامج عيادة التخسيس.lnk" (
-    powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'برنامج عيادة التخسيس.lnk')); $s.TargetPath = '%~dp0run.bat'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = 'shell32.dll,43'; $s.Save()" >nul 2>&1
-)
-
-:: Auto-detect and include local Node.js and standard Windows installation paths
-if exist "%~dp0node.exe" set "PATH=%~dp0;%PATH%"
-if exist "%~dp0node\node.exe" set "PATH=%~dp0node;%PATH%"
+:: Auto-detect and include standard Node.js installation paths
 if exist "C:\Program Files\nodejs\node.exe" set "PATH=C:\Program Files\nodejs;%PATH%"
 if exist "C:\Program Files (x86)\nodejs\node.exe" set "PATH=C:\Program Files (x86)\nodejs;%PATH%"
 if exist "%LocalAppData%\Programs\node\nodejs\node.exe" set "PATH=%LocalAppData%\Programs\node\nodejs;%PATH%"
+if exist "%AppData%\npm" set "PATH=%AppData%\npm;%PATH%"
 
-node -v >nul 2>nul
-if %errorlevel% neq 0 goto MISSING_NODE
-
-call npm -v >nul 2>nul
-if %errorlevel% neq 0 goto MISSING_NODE
-
-:: Check if node_modules already installed
-if exist "node_modules\tsx" goto START_SERVER
-if exist "node_modules\express" goto START_SERVER
-
-cls
-echo ===================================================================
-echo     جاري تجهيز وتثبيت مكتبات البرنامج للمرة الأولى فقط (يرجى الانتظار...)
-echo ===================================================================
-echo.
-call npm install --no-audit --no-fund
-if %errorlevel% neq 0 (
-  call npm install --force --no-audit --no-fund
+:: Test if Node is available
+node -v >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo ===================================================================
+    echo [!] Error: Node.js is not found on your system!
+    echo ===================================================================
+    echo.
+    echo Please install Node.js from https://nodejs.org
+    echo Then run this file again.
+    echo.
+    pause
+    exit /b 1
 )
 
-:START_SERVER
+:: Create Desktop Shortcut if not exists (using clean powershell execution)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$lnk = [System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'Clinic System.lnk'); if (-not (Test-Path $lnk)) { $ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut($lnk); $s.TargetPath = '%~dp0run.bat'; $s.WorkingDirectory = '%~dp0'; $s.Save() }" >nul 2>&1
+
+:: Check dependencies
+if not exist "node_modules\express" (
+    echo ===================================================================
+    echo [*] First time setup: Installing required libraries...
+    echo ===================================================================
+    call npm install --no-audit --no-fund
+)
+
 cls
 echo ===================================================================
-echo       تم تشغيل برنامج عيادة التخسيس والتغذية بنجاح!
+echo   Clinic Management System - Starting Local Server...
 echo ===================================================================
 echo.
-echo [+] جاري فتح نافذة البرنامج تلقائياً...
-echo.
-echo [*] احتفظ بهذه النافذة مفتوحة طوال فترة عمل العيادة.
+echo [*] Initializing clinic database and services...
+echo [*] Waiting for server to become fully ready on port 3000...
 echo.
 
-:: Open the browser directly
-start http://localhost:3000
+:: Launch background health check to open browser only when server is ready
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Job -ScriptBlock { for ($i=0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; try { $res = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/api/health' -UseBasicParsing -TimeoutSec 1; if ($res.StatusCode -eq 200) { Start-Process 'http://localhost:3000'; break; } } catch {} } }" >nul 2>&1
 
-:: Start server silently and stably
+:: Run the server
 call npm run dev
-if %errorlevel% neq 0 (
-  call npx tsx server.ts
-)
 
 pause
-exit /b 0
-
-:MISSING_NODE
-cls
-echo ===================================================================
-echo [!] تنبيه: يحتاج البرنامج لتثبيت Node.js للعمل محلياً.
-echo ===================================================================
-echo.
-echo 1. يرجى تحميل وتثبيت Node.js من الرابط التالي:
-echo    https://nodejs.org
-echo.
-echo 2. بعد انتهاء التثبيت، افتح البرنامج مرة أخرى وسيعمل فوراً بنقرة واحدة.
-echo.
-pause
-exit /b 1
